@@ -302,41 +302,6 @@ function CoursesContent() {
           (pt) => new kakao.maps.LatLng(pt.lat, pt.lng)
         );
 
-        const polyline = new kakao.maps.Polyline({
-          path: linePath,
-          strokeWeight: 6,
-          strokeColor: "#c5ff3b", // Brand color
-          strokeOpacity: 0.95,
-          strokeStyle: "solid",
-        });
-        polyline.setMap(map);
-
-        // Add POIs
-        selectedCourse.pois.forEach((poi) => {
-          const markerPosition = new kakao.maps.LatLng(poi.lat, poi.lng);
-          const marker = new kakao.maps.Marker({
-            position: markerPosition,
-            map: map,
-          });
-
-          // Infowindow
-          const infowindow = new kakao.maps.InfoWindow({
-            content: `
-              <div style="padding:6px; min-width:120px; text-align:center; font-family:sans-serif; background:#0d1117; color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:6px; font-size:11px; font-weight:bold;">
-                ${poi.name}
-              </div>
-            `,
-          });
-
-          kakao.maps.event.addListener(marker, "mouseover", () => {
-            infowindow.open(map, marker);
-          });
-
-          kakao.maps.event.addListener(marker, "mouseout", () => {
-            infowindow.close();
-          });
-        });
-
         // Set Bounds
         const bounds = new kakao.maps.LatLngBounds();
         linePath.forEach((pt) => bounds.extend(pt));
@@ -526,81 +491,7 @@ function CoursesContent() {
                         <path d="M 0,220 C 100,200 200,260 350,220 L 350,300 L 0,300 Z" fill="rgba(197, 255, 59, 0.02)" stroke="rgba(197, 255, 59, 0.05)" strokeWidth="2" />
                       )}
 
-                      {/* Course Polyline glow */}
-                      <path
-                        d={selectedCourse.svgPath}
-                        fill="none"
-                        stroke="rgba(255, 255, 255, 0.1)"
-                        strokeWidth="8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d={selectedCourse.svgPath}
-                        fill="none"
-                        stroke="var(--brand)"
-                        strokeWidth="3.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="animate-dash text-glow"
-                      />
-
-                      {/* POI Markers */}
-                      {selectedCourse.pois.map((poi, idx) => (
-                        <g key={idx} className="cursor-help group/poi">
-                          <circle
-                            cx={poi.x}
-                            cy={poi.y}
-                            r="6"
-                            fill="#06080c"
-                            stroke="var(--brand)"
-                            strokeWidth="2.5"
-                          />
-                          <circle
-                            cx={poi.x}
-                            cy={poi.y}
-                            r="12"
-                            fill="rgba(197, 255, 59, 0.25)"
-                            className="animate-ping"
-                            style={{ animationDuration: `${2.5 + idx}s` }}
-                          />
-                          <g className="opacity-0 group-hover/poi:opacity-100 transition-opacity duration-200">
-                            <rect
-                              x={poi.x - 60}
-                              y={poi.y - 32}
-                              width="120"
-                              height="22"
-                              rx="4"
-                              fill="rgba(13, 17, 23, 0.95)"
-                              stroke="rgba(255, 255, 255, 0.15)"
-                              strokeWidth="1"
-                            />
-                            <text
-                              x={poi.x}
-                              y={poi.y - 17}
-                              fill="white"
-                              fontSize="9"
-                              textAnchor="middle"
-                              fontWeight="bold"
-                            >
-                              {poi.name}
-                            </text>
-                          </g>
-                        </g>
-                      ))}
                     </svg>
-
-                    {/* SVG Legend */}
-                    <div className="absolute bottom-4 left-4 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 flex flex-col gap-1 text-[9px] text-zinc-500 select-none">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-0.5 bg-brand inline-block"></span>
-                        <span>방향 안내 루트</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full border border-brand bg-[#06080c] inline-block"></span>
-                        <span>주요 포인트 (마커 마우스 오버 가능)</span>
-                      </div>
-                    </div>
                   </div>
                 )}
               </div>

@@ -14,28 +14,88 @@ const MOCK_LIVE_WEATHER = {
 };
 
 export default function WeatherPage() {
-  const [liveWeather, setLiveWeather] = useState(MOCK_LIVE_WEATHER);
-
-  // Calculator custom states
-  const [calcTemp, setCalcTemp] = useState(20);
-  const [calcDust, setCalcDust] = useState(15);
-  const [calcHumidity, setCalcHumidity] = useState(50);
-  const [calcWind, setCalcWind] = useState(3.0);
-  const [calcSky, setCalcSky] = useState("맑음");
-
-  // Calculated final running suitability score
+  const [liveWeather, setLiveWeather] = useState<any>(null);
   const [score, setScore] = useState(95);
   const [tips, setTips] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
   const [statusColor, setStatusColor] = useState("");
 
+  // Slider States
+  const [calcTemp, setCalcTemp] = useState(21);
+  const [calcDust, setCalcDust] = useState(12);
+  const [calcHumidity, setCalcHumidity] = useState(55);
+  const [calcWind, setCalcWind] = useState(2.5);
+  const [calcSky, setCalcSky] = useState("맑음");
+
+  // Fetch real weather + AirKorea PM2.5
+  useEffect(() => {
+    const fetchWeather = async () => {
+      try {
+        const resp = await fetch('/api/weather');
+        if (!resp.ok) throw new Error('Weather fetch failed');
+        const data = await resp.json();
+
+        // Weather mapping
+        const temp = data.temperature?.degrees ?? 21;
+        const humidity = data.relativeHumidity ?? 55;
+        const windKmph = data.wind?.speed?.kmph ?? 9.0;
+        const windSpeed = parseFloat((windKmph / 3.6).toFixed(1));
+        const condType = data.weatherCondition?.type ?? "CLEAR";
+
+        let sky = "맑음";
+        if (condType.includes("CLOUD") || condType.includes("OVERCAST")) {
+          sky = "구름많음";
+        } else if (condType.includes("RAIN") || condType.includes("DRIZZLE") || condType.includes("STORM")) {
+          sky = "비";
+        } else if (condType.includes("SNOW") || condType.includes("ICE")) {
+          sky = "눈";
+        }
+
+        // 에어코리아 실시간 PM2.5 (없으면 기본값)
+        const pm25 = data.airQuality?.pm25 ?? MOCK_LIVE_WEATHER.pm25;
+        const dustGrade = data.airQuality?.grade ?? '좋음';
+        const dustSource = data.airQuality?.source ?? 'fallback';
+
+        const mapped = {
+          temp,
+          pm25,
+          dustGrade,
+          dustSource,
+          humidity,
+          windSpeed,
+          sky,
+          updatedAt: new Date().toLocaleTimeString(),
+        };
+
+        setLiveWeather(mapped);
+        setCalcTemp(mapped.temp);
+        setCalcDust(mapped.pm25);
+        setCalcHumidity(mapped.humidity);
+        setCalcWind(mapped.windSpeed);
+        setCalcSky(mapped.sky);
+      } catch (e) {
+        console.error(e);
+        // Fallback to mock on error
+        setLiveWeather({ ...MOCK_LIVE_WEATHER, dustGrade: '좋음', dustSource: 'fallback' });
+        setCalcTemp(MOCK_LIVE_WEATHER.temp);
+        setCalcDust(MOCK_LIVE_WEATHER.pm25);
+        setCalcHumidity(MOCK_LIVE_WEATHER.humidity);
+        setCalcWind(MOCK_LIVE_WEATHER.windSpeed);
+        setCalcSky(MOCK_LIVE_WEATHER.sky);
+      }
+    };
+    fetchWeather();
+  }, []);
+
   // Sync calculator with live weather
   const syncWithLive = () => {
-    setCalcTemp(liveWeather.temp);
-    setCalcDust(liveWeather.pm25);
-    setCalcHumidity(liveWeather.humidity);
-    setCalcWind(liveWeather.windSpeed);
-    setCalcSky(liveWeather.sky);
+    if (liveWeather) {
+      setCalcTemp(liveWeather.temp);
+      setCalcDust(liveWeather.pm25);
+      setCalcHumidity(liveWeather.humidity);
+      setCalcWind(liveWeather.windSpeed);
+      setCalcSky(liveWeather.sky);
+    }
   };
 
   // Recalculate score whenever slider states change
@@ -91,7 +151,7 @@ export default function WeatherPage() {
       setStatusColor("text-amber-400 bg-amber-500/10 border-amber-500/20");
     } else {
       setStatusMessage("🛑 야외 러닝에 부적합합니다. 실내 운동을 고려해 보세요.");
-      setStatusColor("text-rose-400 bg-rose-500/10 border-rose-500/20");
+      setStatusColor("text-rose-450 bg-rose-500/10 border-rose-500/20");
     }
 
     // Warnings based on absolute metrics
@@ -125,6 +185,13 @@ export default function WeatherPage() {
 
     setTips(newTips);
   }, [calcTemp, calcDust, calcHumidity, calcWind, calcSky]);
+
+  if (!liveWeather) return (
+    <div className="flex flex-col items-center justify-center py-32 text-zinc-400">
+      <span className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full mb-4" />
+      날씨 데이터를 불러오는 중...
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-8 px-4 py-8 md:px-8 mx-auto max-w-7xl w-full">
@@ -170,8 +237,19 @@ export default function WeatherPage() {
             {/* Grid statistics list */}
             <div className="grid grid-cols-2 gap-4 border-t border-zinc-900/60 pt-6">
               <div className="bg-black/20 border border-zinc-900/40 rounded-xl p-3">
-                <div className="text-[10px] text-zinc-500">초미세먼지</div>
-                <div className="text-xs font-bold text-brand mt-1">{liveWeather.pm25} ㎍/㎡ (좋음)</div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-zinc-500">초미세먼지 PM2.5</span>
+                  {liveWeather.dustSource === 'airkorea' && (
+                    <span className="text-[8px] bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 px-1 rounded">에어코리아</span>
+                  )}
+                </div>
+                <div className={`text-xs font-bold mt-1 ${
+                  liveWeather.pm25 > 75 ? 'text-rose-400' :
+                  liveWeather.pm25 > 35 ? 'text-amber-400' :
+                  liveWeather.pm25 > 15 ? 'text-yellow-400' : 'text-brand'
+                }`}>
+                  {liveWeather.pm25} ㎍/㎡ ({liveWeather.dustGrade ?? '좋음'})
+                </div>
               </div>
               <div className="bg-black/20 border border-zinc-900/40 rounded-xl p-3">
                 <div className="text-[10px] text-zinc-500">습도</div>

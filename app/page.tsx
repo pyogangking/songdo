@@ -3,15 +3,13 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
-// Mock weather data state for home preview
-const TODAY_WEATHER = {
-  temp: 22,
-  pm25: 14,
-  humidity: 58,
-  windSpeed: 2.8,
-  status: "쾌적",
-  runningScore: 94,
-  comment: "온화한 온도와 깨끗한 미세먼지! 오늘 저녁 해안가 러닝을 추천합니다.",
+// Fallback weather data (same as weather page mock)
+const FALLBACK_WEATHER = {
+  temp: 21,
+  pm25: 12,
+  humidity: 55,
+  windSpeed: 2.5,
+  sky: "맑음",
 };
 
 // 2026 Marathon list summary
@@ -36,9 +34,84 @@ const UPCOMING_MARATHONS = [
   },
 ];
 
+function computeRunningScore(temp: number, pm25: number, humidity: number, windSpeed: number, sky: string) {
+  // 1. Temp score (Ideal: 14°C)
+  const idealTemp = 14;
+  const tempDiff = Math.abs(temp - idealTemp);
+  const tempScore = Math.max(0, 100 - Math.pow(tempDiff, 1.4) * 2.2);
+
+  // 2. Fine Dust PM2.5 score
+  let dustScore = 100;
+  if (pm25 <= 15) dustScore = 100;
+  else if (pm25 <= 35) dustScore = 80;
+  else if (pm25 <= 75) dustScore = 40;
+  else dustScore = 10;
+
+  // 3. Humidity score (Ideal: 50%)
+  const humidityDiff = Math.abs(humidity - 50);
+  const humidityScore = Math.max(0, 100 - humidityDiff * 1.0);
+
+  // 4. Wind score (Ideal: <= 2.0 m/s)
+  const windScore = Math.max(0, 100 - Math.max(0, windSpeed - 2) * 8.5);
+
+  // 5. Sky condition multiplier
+  let skyMultiplier = 1.0;
+  if (sky === "구름많음") skyMultiplier = 0.95;
+  else if (sky === "비") skyMultiplier = 0.45;
+  else if (sky === "눈") skyMultiplier = 0.35;
+
+  const weightedBase = tempScore * 0.35 + dustScore * 0.35 + humidityScore * 0.15 + windScore * 0.15;
+  const finalScore = Math.round(weightedBase * skyMultiplier);
+  return Math.max(0, Math.min(100, finalScore));
+}
+
+function getWeatherComment(score: number, temp: number, sky: string) {
+  if (score >= 85) return `온화한 온도(${temp}°C)와 맑은 날씨! 오늘 저녁 해안가 러닝을 추천합니다.`;
+  if (score >= 70) return `러닝하기 준수한 날씨입니다(${temp}°C). 가볍게 조깅을 시작해 보세요.`;
+  if (score >= 50) return `${sky === "비" ? "비가 내리는" : "흐린"} 날씨(${temp}°C)입니다. 조심히 달리세요.`;
+  return `오늘은 야외 러닝에 적합하지 않습니다(${temp}°C). 실내 운동을 고려해 보세요.`;
+}
+
 export default function Home() {
-  const [weather, setWeather] = useState(TODAY_WEATHER);
+  const [weather, setWeather] = useState<null | {
+    temp: number; pm25: number; humidity: number; windSpeed: number; sky: string;
+  }>(null);
+  const [runningScore, setRunningScore] = useState(94);
   const [activeRuners, setActiveRunners] = useState(1284);
+
+  // Fetch live weather
+  useEffect(() => {
+    const fetchWeather = async () => {
+      try {
+        const resp = await fetch('/api/weather');
+        if (!resp.ok) throw new Error('failed');
+        const data = await resp.json();
+
+        const temp = data.temperature?.degrees ?? FALLBACK_WEATHER.temp;
+        const humidity = data.relativeHumidity ?? FALLBACK_WEATHER.humidity;
+        const windKmph = data.wind?.speed?.kmph ?? 9.0;
+        const windSpeed = parseFloat((windKmph / 3.6).toFixed(1));
+        const condType = data.weatherCondition?.type ?? "CLEAR";
+
+        let sky = "맑음";
+        if (condType.includes("CLOUD") || condType.includes("OVERCAST")) sky = "구름많음";
+        else if (condType.includes("RAIN") || condType.includes("DRIZZLE") || condType.includes("STORM")) sky = "비";
+        else if (condType.includes("SNOW") || condType.includes("ICE")) sky = "눈";
+
+        // 에어코리아 실시간 PM2.5
+        const pm25 = data.airQuality?.pm25 ?? FALLBACK_WEATHER.pm25;
+
+        const mapped = { temp, pm25, humidity, windSpeed, sky };
+        setWeather(mapped);
+        setRunningScore(computeRunningScore(temp, pm25, humidity, windSpeed, sky));
+      } catch {
+        const fb = FALLBACK_WEATHER;
+        setWeather(fb);
+        setRunningScore(computeRunningScore(fb.temp, fb.pm25, fb.humidity, fb.windSpeed, fb.sky));
+      }
+    };
+    fetchWeather();
+  }, []);
 
   // Simulate active runners count fluctuating
   useEffect(() => {
@@ -48,69 +121,32 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
+  const w = weather ?? FALLBACK_WEATHER;
+  const comment = getWeatherComment(runningScore, w.temp, w.sky);
+
   return (
     <div className="flex flex-col gap-16 px-4 py-8 md:px-8 mx-auto max-w-7xl w-full">
-      
-      {/* 1. Hero Section */}
-      <section className="relative overflow-hidden rounded-3xl glass-panel py-16 px-8 md:px-16 md:py-24 text-center md:text-left flex flex-col lg:flex-row items-center justify-between gap-12 box-glow">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-brand/5 blur-3xl rounded-full"></div>
-        <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-blue-500/5 blur-3xl rounded-full"></div>
-        
-        <div className="flex flex-col gap-6 max-w-2xl z-10 animate-fade-in-up">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand/10 border border-brand/20 text-brand text-xs font-semibold w-fit mx-auto md:mx-0">
-            <span className="flex h-2 w-2 rounded-full bg-brand animate-pulse"></span>
-            실시간 송도 러닝 동호인 {activeRuners}명 활동 중
-          </div>
-          
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-white leading-tight">
-            송도의 바람을 가르다,<br />
-            <span className="text-brand text-glow">SONGDO RUN</span> 포털
-          </h1>
-          
-          <p className="text-zinc-400 text-lg md:text-xl font-normal leading-relaxed">
-            인천 송도국제도시 러너들을 위한 종합 정보 포털입니다. 엄선된 5개 시그니처 러닝 코스 지도 시각화, 실시간 기상 적합도 계산기, 2026 마라톤 대회 일정까지 스마트하게 탐색하세요.
-          </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 mt-4 justify-center md:justify-start">
-            <Link
-              id="hero-courses-btn"
-              href="/courses"
-              className="px-8 py-4 rounded-2xl bg-brand text-black font-bold text-base hover:bg-white transition-all hover:scale-[1.02] active:scale-[0.98] box-glow text-center cursor-pointer"
-            >
-              5대 러닝 코스 지도
-            </Link>
-            <Link
-              id="hero-weather-btn"
-              href="/weather"
-              className="px-8 py-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-white font-semibold text-base hover:bg-zinc-800 transition-all hover:scale-[1.02] active:scale-[0.98] text-center cursor-pointer"
-            >
-              날씨 적합도 분석
-            </Link>
-          </div>
-        </div>
-
-        {/* Hero Decorative Info Card */}
-        <div className="relative w-full max-w-[340px] aspect-square flex items-center justify-center animate-fade-in-up z-10" style={{ animationDelay: "150ms" }}>
-          <div className="absolute inset-0 rounded-full border border-zinc-850 animate-pulse-ring"></div>
-          <div className="absolute inset-8 rounded-full border border-brand/10"></div>
-          <div className="glass-panel w-60 h-60 rounded-full flex flex-col items-center justify-center border-brand/35 relative z-10 shadow-2xl">
-            <svg className="w-16 h-16 text-brand mb-2 animate-bounce" style={{ animationDuration: '3s' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m-3-10.5v12.75M9 3h6m-6 18h6" />
-            </svg>
-            <div className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Today's Runner Index</div>
-            <div className="text-3xl font-black text-white mt-1 text-glow">94 / 100점</div>
-            <span className="text-brand text-xs font-semibold mt-1">달리기 최상 기온</span>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. YouTube Shorts Embed & Weather Suitability Row */}
+      {/* YouTube Shorts Embed & Weather Suitability Row */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Side: YouTube Shorts Promo Video Embed (5 columns) */}
         <div className="lg:col-span-5 flex flex-col gap-6 w-full animate-fade-in-up" style={{ animationDelay: "100ms" }}>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">송도 러닝 동기부여 쇼츠</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold tracking-tight text-white">송도 러닝 동기부여 쇼츠</h2>
+              <a
+                href="https://www.youtube.com/results?search_query=%23%EC%86%A1%EB%8F%84%EB%9F%AC%EB%8B%9D"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs font-bold text-red-500 hover:text-white transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                </svg>
+                #송도러닝 더 보기 →
+              </a>
+            </div>
             <p className="text-zinc-500 text-sm mt-1">송도의 아름다운 전경과 러닝 욕구를 자극하는 홍보 숏폼 영상</p>
           </div>
 
@@ -131,16 +167,56 @@ export default function Home() {
               </div>
             </div>
 
-            {/* YouTube Shorts Embed Iframe */}
-            <div className="w-full h-full pt-12 pb-6 px-1 relative z-10 bg-zinc-950">
-              <iframe
-                id="youtube-shorts-iframe"
-                src="https://www.youtube.com/embed/5a4G7m1l5mI?autoplay=0&loop=1&playlist=5a4G7m1l5mI&controls=1&mute=1"
-                title="Songdo Running Motivation Shorts"
-                className="w-full h-full border-0 rounded-2xl shadow-inner"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              ></iframe>
+            {/* Smart phone screen contents (No iframe error) */}
+            <div className="w-full h-full relative z-10 bg-zinc-950 flex flex-col justify-between pt-24 pb-8 px-4 overflow-hidden rounded-[2.7rem]">
+              {/* Background image (Shorts intro) with overlay */}
+              <div 
+                className="absolute inset-0 z-0 bg-cover bg-center opacity-40"
+                style={{ backgroundImage: `url('/songdo_shorts_intro.png')` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
+
+              {/* Title inside phone */}
+              <div className="relative z-20 flex flex-col items-center text-center mt-2">
+                <span className="text-[9px] font-extrabold tracking-wider px-2 py-0.5 rounded-full bg-red-650/40 border border-red-500/20 text-red-400 mb-1">
+                  YOUTUBE SHORTS
+                </span>
+                <h4 className="text-xs font-black text-white drop-shadow-md">#송도러닝 추천코스</h4>
+              </div>
+
+              {/* Center Play Button */}
+              <div className="relative z-20 flex flex-col items-center justify-center my-auto">
+                <a
+                  href="https://www.youtube.com/results?search_query=%23%EC%86%A1%EB%8F%84%EB%9F%AC%EB%8B%9D"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group relative flex items-center justify-center w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer"
+                >
+                  <span className="absolute inset-0 rounded-full bg-red-600/30 animate-ping group-hover:animate-none" />
+                  <svg className="w-5 h-5 fill-current translate-x-0.5" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </a>
+                <span className="text-[10px] text-zinc-350 font-medium mt-3 bg-black/50 px-2 py-0.5 rounded backdrop-blur-sm relative z-20">
+                  클릭 시 쇼츠로 이동
+                </span>
+              </div>
+
+              {/* Red Link Button (inside phone screen) */}
+              <div className="relative z-20 w-full px-1 mt-auto">
+                <a
+                  href="https://www.youtube.com/results?search_query=%23%EC%86%A1%EB%8F%84%EB%9F%AC%EB%8B%9D"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  id="youtube-songdo-link-inner"
+                  className="flex items-center justify-center gap-1.5 w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-[11px] transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                  </svg>
+                  YouTube에서 Shorts 보기
+                </a>
+              </div>
             </div>
 
             {/* Bottom Home Indicator Bar */}
@@ -166,36 +242,43 @@ export default function Home() {
             <div className="glass-panel rounded-3xl p-6 border-brand/10 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-brand/5 blur-3xl rounded-full"></div>
               
+              {!weather && (
+                <div className="flex items-center gap-2 text-zinc-500 text-sm mb-4">
+                  <span className="animate-spin h-4 w-4 border-2 border-brand border-t-transparent rounded-full inline-block" />
+                  날씨 데이터 로드 중...
+                </div>
+              )}
+
               <div className="flex justify-between items-start">
                 <div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand/10 border border-brand/20 text-brand">Running Index</span>
                   <h3 className="text-2xl font-extrabold text-white mt-3">
-                    오늘 러닝 적합도 <span className="text-brand text-glow">{weather.runningScore}점</span>
+                    오늘 러닝 적합도 <span className="text-brand text-glow">{runningScore}점</span>
                   </h3>
                 </div>
                 <span className="text-3xl">🏃‍♂️💨</span>
               </div>
 
               <p className="text-zinc-300 text-sm leading-relaxed my-5 font-medium">
-                &quot;{weather.comment}&quot;
+                &quot;{comment}&quot;
               </p>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-zinc-900 pt-5 text-center">
                 <div>
                   <div className="text-zinc-500 text-[10px]">기온</div>
-                  <div className="text-base font-bold text-white mt-0.5">{weather.temp}°C</div>
+                  <div className="text-base font-bold text-white mt-0.5">{w.temp}°C</div>
                 </div>
                 <div>
                   <div className="text-zinc-500 text-[10px]">미세먼지</div>
-                  <div className="text-base font-bold text-brand mt-0.5">{weather.pm25} ㎍/㎡ (좋음)</div>
+                  <div className="text-base font-bold text-brand mt-0.5">{w.pm25} ㎍/㎡ (좋음)</div>
                 </div>
                 <div>
                   <div className="text-zinc-500 text-[10px]">습도</div>
-                  <div className="text-base font-bold text-white mt-0.5">{weather.humidity}%</div>
+                  <div className="text-base font-bold text-white mt-0.5">{w.humidity}%</div>
                 </div>
                 <div>
                   <div className="text-zinc-500 text-[10px]">해안 풍속</div>
-                  <div className="text-base font-bold text-white mt-0.5">{weather.windSpeed} m/s</div>
+                  <div className="text-base font-bold text-white mt-0.5">{w.windSpeed} m/s</div>
                 </div>
               </div>
             </div>
@@ -254,7 +337,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 3. Signature Courses Brief Section */}
+      {/* Signature Courses Brief Section */}
       <section className="flex flex-col gap-6">
         <div className="flex justify-between items-end">
           <div>
@@ -272,36 +355,36 @@ export default function Home() {
             <div>
               <div className="flex justify-between items-center mb-3">
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">초급</span>
-                <span className="text-zinc-400 text-xs font-semibold">4.2km</span>
+                <span className="text-zinc-400 text-xs font-semibold">5.0km</span>
               </div>
-              <h3 className="text-lg font-bold text-white mb-2 leading-snug">송도 센트럴파크 해수로 코스</h3>
-              <p className="text-zinc-500 text-xs line-clamp-2">한옥마을 조명과 해수로 보트를 따라 달리는 초급자용 야경 명소 코스</p>
+              <h3 className="text-lg font-bold text-white mb-2 leading-snug">센트럴파크 순환 코스</h3>
+              <p className="text-zinc-500 text-xs line-clamp-2">송도의 랜드마크 센트럴파크 호수를 한 바퀴 도는 인기 코스. 트라이볼, NC큐브 등 주요 명소를 지나갑니다.</p>
             </div>
-            <Link href="/courses?selected=central-park" className="text-xs text-brand mt-4 font-semibold hover:text-white">지도보기 &rarr;</Link>
+            <Link href="/courses?selected=2" className="text-xs text-brand mt-4 font-semibold hover:text-white">지도보기 &rarr;</Link>
           </div>
 
           <div className="glass-panel glass-panel-hover rounded-2xl p-6 flex flex-col justify-between min-h-[160px]">
             <div>
               <div className="flex justify-between items-center mb-3">
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-amber-400 bg-amber-500/10 border-amber-500/20">중급</span>
-                <span className="text-zinc-400 text-xs font-semibold">6.8km</span>
+                <span className="text-zinc-400 text-xs font-semibold">8.5km</span>
               </div>
-              <h3 className="text-lg font-bold text-white mb-2 leading-snug">인천대 외곽 해안선 코스</h3>
-              <p className="text-zinc-500 text-xs line-clamp-2">서해 낙조와 솔찬공원의 시원한 바닷길 정취를 느낄 수 있는 중급 코스</p>
+              <h3 className="text-lg font-bold text-white mb-2 leading-snug">INU 인천대 캠퍼스 코스</h3>
+              <p className="text-zinc-500 text-xs line-clamp-2">인천대 캠퍼스를 순회하며 송도 신도시까지 이어지는 훈련용 코스. 언덕 구간이 있어 체력 향상에 좋습니다.</p>
             </div>
-            <Link href="/courses?selected=inu-loop" className="text-xs text-brand mt-4 font-semibold hover:text-white">지도보기 &rarr;</Link>
+            <Link href="/courses?selected=4" className="text-xs text-brand mt-4 font-semibold hover:text-white">지도보기 &rarr;</Link>
           </div>
 
           <div className="glass-panel glass-panel-hover rounded-2xl p-6 flex flex-col justify-between min-h-[160px]">
             <div>
               <div className="flex justify-between items-center mb-3">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-rose-400 bg-rose-500/10 border-rose-500/20">상급</span>
-                <span className="text-zinc-400 text-xs font-semibold">10.5km</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-amber-400 bg-amber-500/10 border-amber-500/20">중급</span>
+                <span className="text-zinc-400 text-xs font-semibold">10.2km</span>
               </div>
-              <h3 className="text-lg font-bold text-white mb-2 leading-snug">잭니클라우스 CC 외곽 순환</h3>
-              <p className="text-zinc-500 text-xs line-clamp-2">신호 대기 없이 바다 바람을 맞으며 훈련할 수 있는 논스톱 장거리 코스</p>
+              <h3 className="text-lg font-bold text-white mb-2 leading-snug">잭니클라우스 골프장 외곽 코스</h3>
+              <p className="text-zinc-500 text-xs line-clamp-2">잭니클라우스 골프장 외곽을 따라 송도 전역을 순회하는 장거리 코스. 하프 마라톤 대비 훈련에 적합합니다.</p>
             </div>
-            <Link href="/courses?selected=jack-nicklaus" className="text-xs text-brand mt-4 font-semibold hover:text-white">지도보기 &rarr;</Link>
+            <Link href="/courses?selected=5" className="text-xs text-brand mt-4 font-semibold hover:text-white">지도보기 &rarr;</Link>
           </div>
         </div>
       </section>
