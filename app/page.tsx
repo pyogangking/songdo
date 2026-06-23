@@ -187,7 +187,7 @@ export default function Home() {
               {/* Center Play Button */}
               <div className="relative z-20 flex flex-col items-center justify-center my-auto">
                 <a
-                  href="https://www.youtube.com/results?search_query=%23%EC%86%A1%EB%8F%84%EB%9F%AC%EB%8B%9D"
+                  href="https://youtube.com/shorts/fnQMnkYdhG8"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group relative flex items-center justify-center w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer"
